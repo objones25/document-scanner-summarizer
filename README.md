@@ -31,7 +31,7 @@ A powerful Python CLI tool that extracts text from various document sources (ima
 
 ```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/objones25/document-scanner-summarizer.git
 cd document_scanner_summarizer
 
 # Install dependencies with uv
@@ -329,7 +329,7 @@ summarizer = create_summarizer(
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone https://github.com/objones25/document-scanner-summarizer.git
 cd document_scanner_summarizer
 
 # Install dependencies
