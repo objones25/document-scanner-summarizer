@@ -169,11 +169,15 @@ class AnthropicProvider(LLMProvider):
             if "web-fetch-2025-09-10" not in betas:
                 betas.append("web-fetch-2025-09-10")
 
-        # Add tools and betas to request if any are enabled
+        # Add tools to request if any are enabled
         if tools:
             stream_kwargs["tools"] = tools
+
+        # Add beta headers if any features require them
         if betas:
-            stream_kwargs["betas"] = betas
+            stream_kwargs["extra_headers"] = {
+                "anthropic-beta": ", ".join(betas)
+            }
 
         with self.client.messages.stream(**stream_kwargs) as stream:
             for text in stream.text_stream:
