@@ -200,13 +200,16 @@ class OpenAIProvider(LLMProvider):
 
 
 class GeminiProvider(LLMProvider):
-    """Google Gemini provider."""
+    """Google Gemini provider with advanced features."""
 
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "gemini-3-pro-preview",
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
+        enable_thinking: bool = False,
+        enable_grounding: bool = False,
+        enable_code_execution: bool = False
     ):
         """
         Initialize Gemini provider.
@@ -215,6 +218,9 @@ class GeminiProvider(LLMProvider):
             api_key: Google API key (default: GOOGLE_API_KEY env var)
             model: Model to use (default: gemini-3-pro-preview)
             max_tokens: Maximum tokens in response (default: 4096)
+            enable_thinking: Enable extended reasoning mode (default: False)
+            enable_grounding: Enable Google Search grounding (default: False)
+            enable_code_execution: Enable code execution (default: False)
         """
         from google import genai
 
@@ -225,41 +231,95 @@ class GeminiProvider(LLMProvider):
         self.client = genai.Client(api_key=self.api_key)
         self.model = model
         self.max_tokens = max_tokens
+        self.enable_thinking = enable_thinking
+        self.enable_grounding = enable_grounding
+        self.enable_code_execution = enable_code_execution
 
     def stream_response(
         self,
         history: ConversationHistory,
         **kwargs: Any
     ) -> Iterator[str]:
-        """Stream response from Gemini."""
-        # Build contents in Gemini format
-        contents: list[str] = []
+        """Stream response from Gemini with advanced features."""
+        from google.genai import types
 
-        # Add system instruction as first message if provided
-        system_instruction: str | None = history.system_prompt
+        # Build contents in Gemini format
+        contents: list[types.Content] = []
 
         # Add conversation history
         for msg in history.messages:
             # Gemini uses 'user' and 'model' roles
-            role: str = "model" if msg.role == "assistant" else msg.role
-            contents.append(f"{role}: {msg.content}")
+            role: str = "model" if msg.role == "assistant" else "user"
+            contents.append(
+                types.Content(
+                    role=role,
+                    parts=[types.Part(text=msg.content)]
+                )
+            )
 
-        # Combine all messages into a single prompt
-        combined_prompt: str = "\n\n".join(contents)
+        # Build config parameters
+        config_params: dict[str, Any] = {
+            "max_output_tokens": kwargs.get("max_tokens", self.max_tokens),
+        }
+
+        # Add system instruction if present
+        if history.system_prompt:
+            config_params["system_instruction"] = history.system_prompt
+
+        # Add thinking mode if enabled (for gemini-3-pro-preview)
+        thinking_mode: str | None = kwargs.get("thinking")
+        if thinking_mode or self.enable_thinking:
+            # Use ThinkingConfig for extended reasoning
+            thinking_level_str: str = thinking_mode or "high"
+            thinking_level = (
+                types.ThinkingLevel.HIGH if thinking_level_str.lower() == "high"
+                else types.ThinkingLevel.LOW
+            )
+            config_params["thinking_config"] = types.ThinkingConfig(
+                thinking_level=thinking_level,
+                include_thoughts=True
+            )
+
+        # Add tools if enabled
+        tools: list[types.Tool] = []
+
+        if kwargs.get("enable_grounding", self.enable_grounding):
+            # Add Google Search grounding
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+
+        if kwargs.get("enable_code_execution", self.enable_code_execution):
+            # Add code execution capability
+            tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
+
+        if tools:
+            config_params["tools"] = tools
+
+        # Create config
+        config = types.GenerateContentConfig(**config_params)
 
         # Create streaming request
+        # Type ignore needed due to complex union type for contents parameter
         response = self.client.models.generate_content_stream(
             model=self.model,
-            contents=combined_prompt,
-            config={
-                "max_output_tokens": kwargs.get("max_tokens", self.max_tokens),
-                "system_instruction": system_instruction,
-            }
+            contents=contents,  # type: ignore[arg-type]
+            config=config
         )
 
+        # Stream response chunks
         for chunk in response:
+            # Handle text content
             if chunk.text:
                 yield chunk.text
+
+            # Handle thinking content (if thinking mode is enabled)
+            if chunk.candidates:
+                for candidate in chunk.candidates:
+                    if hasattr(candidate, 'content') and candidate.content:
+                        if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'thought') and part.thought:
+                                    # Yield thinking process
+                                    yield f"\n[THINKING: {part.thought}]\n"
 
 
 class DocumentSummarizer:
@@ -332,9 +392,26 @@ class DocumentSummarizer:
         Args:
             question: Question to ask about the document
             **kwargs: Additional provider-specific arguments
+                For Gemini:
+                - thinking: 'high' for extended reasoning mode
+                - enable_grounding: True to enable Google Search
+                - enable_code_execution: True to enable code execution
 
         Yields:
             Text chunks from the streaming response
+
+        Example:
+            >>> # Use thinking mode (Gemini only)
+            >>> for chunk in summarizer.ask("What are the implications?", thinking="high"):
+            ...     print(chunk, end="", flush=True)
+            >>>
+            >>> # Enable search grounding (Gemini only)
+            >>> for chunk in summarizer.ask("What's the latest news?", enable_grounding=True):
+            ...     print(chunk, end="", flush=True)
+            >>>
+            >>> # Enable code execution (Gemini only)
+            >>> for chunk in summarizer.ask("Analyze this data", enable_code_execution=True):
+            ...     print(chunk, end="", flush=True)
         """
         # Add user question to history
         self.history.add_user_message(question)

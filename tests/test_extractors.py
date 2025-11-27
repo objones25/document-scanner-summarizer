@@ -323,6 +323,50 @@ def test_extract_article_text_filters_short_snippets():
 
 
 # ============================================================================
+# TXT Extraction Tests
+# ============================================================================
+
+def test_extract_from_txt_success(tmp_path: Path):
+    """Test successful TXT text extraction."""
+    txt_file = tmp_path / "test.txt"
+    txt_file.write_text("This is a test document.\nWith multiple lines.\nFor text extraction.", encoding='utf-8')
+
+    result = extractors.extract_from_txt(str(txt_file))
+
+    assert isinstance(result, str)
+    assert "This is a test document." in result
+    assert "With multiple lines." in result
+    assert "For text extraction." in result
+
+
+def test_extract_from_txt_file_not_found():
+    """Test that FileNotFoundError is raised for non-existent TXT."""
+    with pytest.raises(FileNotFoundError, match="TXT file not found"):
+        extractors.extract_from_txt("/nonexistent/file.txt")
+
+
+def test_extract_from_txt_empty_file(tmp_path: Path):
+    """Test TXT extraction on empty file."""
+    empty_txt = tmp_path / "empty.txt"
+    empty_txt.write_text("", encoding='utf-8')
+
+    result = extractors.extract_from_txt(str(empty_txt))
+    assert result == ""
+
+
+def test_extract_from_txt_latin1_encoding(tmp_path: Path):
+    """Test TXT extraction with latin-1 encoding fallback."""
+    txt_file = tmp_path / "latin1.txt"
+    # Write with latin-1 encoding
+    txt_file.write_bytes("Café résumé naïve".encode('latin-1'))
+
+    result = extractors.extract_from_txt(str(txt_file))
+
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+# ============================================================================
 # DOCX Extraction Tests
 # ============================================================================
 
@@ -385,10 +429,16 @@ def test_detect_source_type_docx():
     assert extractors._detect_source_type("file.DOCX") == "docx"
 
 
+def test_detect_source_type_txt():
+    """Test source type detection for TXT files."""
+    assert extractors._detect_source_type("document.txt") == "txt"
+    assert extractors._detect_source_type("file.TXT") == "txt"
+
+
 def test_detect_source_type_unknown():
     """Test that ValueError is raised for unknown file types."""
     with pytest.raises(ValueError, match="Cannot detect source type"):
-        extractors._detect_source_type("file.txt")
+        extractors._detect_source_type("file.xyz")
 
 
 @patch('src.extractors.extract_from_image')
@@ -432,6 +482,20 @@ def test_extract_text_auto_detect_docx(mock_extract: Mock, sample_docx_path: Pat
     result = extract_text(str(sample_docx_path))
 
     assert result == "DOCX text"
+    mock_extract.assert_called_once()
+
+
+@patch('src.extractors.extract_from_txt')
+def test_extract_text_auto_detect_txt(mock_extract: Mock, tmp_path: Path):
+    """Test universal extractor auto-detects and extracts from TXT."""
+    mock_extract.return_value = "TXT text"
+
+    txt_file = tmp_path / "test.txt"
+    txt_file.write_text("test content", encoding='utf-8')
+
+    result = extract_text(str(txt_file))
+
+    assert result == "TXT text"
     mock_extract.assert_called_once()
 
 

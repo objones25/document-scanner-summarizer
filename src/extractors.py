@@ -6,6 +6,7 @@ Supports:
 - PDFs → text extraction or OCR fallback
 - URLs → web scraping + article parsing
 - DOCX files → direct text extraction
+- TXT files → direct text extraction with encoding fallback
 """
 
 from pathlib import Path
@@ -287,20 +288,20 @@ def _extract_article_text(soup: BeautifulSoup) -> str:
 def extract_from_docx(docx_path: str) -> str:
     """
     Extract text from a DOCX file.
-    
+
     Args:
         docx_path: Path to DOCX file
-    
+
     Returns:
         Extracted text
-        
+
     Raises:
         FileNotFoundError: If DOCX file doesn't exist
     """
     docx_path_obj = Path(docx_path)
     if not docx_path_obj.exists():
         raise FileNotFoundError(f"DOCX file not found: {docx_path}")
-    
+
     try:
         doc = Document(docx_path)
 
@@ -312,9 +313,40 @@ def extract_from_docx(docx_path: str) -> str:
                 text_parts.append(text)
 
         return '\n\n'.join(text_parts)
-    
+
     except Exception as e:
         raise RuntimeError(f"Failed to extract text from DOCX: {e}")
+
+
+def extract_from_txt(txt_path: str) -> str:
+    """
+    Extract text from a plain text file.
+
+    Args:
+        txt_path: Path to TXT file
+
+    Returns:
+        Extracted text
+
+    Raises:
+        FileNotFoundError: If TXT file doesn't exist
+    """
+    txt_path_obj = Path(txt_path)
+    if not txt_path_obj.exists():
+        raise FileNotFoundError(f"TXT file not found: {txt_path}")
+
+    try:
+        with open(txt_path_obj, 'r', encoding='utf-8') as f:
+            return f.read()
+    except UnicodeDecodeError:
+        # Try with different encoding if UTF-8 fails
+        try:
+            with open(txt_path_obj, 'r', encoding='latin-1') as f:
+                return f.read()
+        except Exception as e:
+            raise RuntimeError(f"Failed to read text file: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract text from TXT: {e}")
 
 
 def extract_text(
@@ -353,6 +385,8 @@ def extract_text(
         return extract_from_url(source, **kwargs)
     elif source_type == 'docx':
         return extract_from_docx(source)
+    elif source_type == 'txt':
+        return extract_from_txt(source)
     else:
         raise ValueError(f"Unsupported source type: {source_type}")
 
@@ -362,7 +396,7 @@ def _detect_source_type(source: str) -> str:
     # Check if URL
     if source.startswith(('http://', 'https://')):
         return 'url'
-    
+
     # Check file extension
     source_lower = source.lower()
     if source_lower.endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')):
@@ -371,5 +405,7 @@ def _detect_source_type(source: str) -> str:
         return 'pdf'
     elif source_lower.endswith('.docx'):
         return 'docx'
+    elif source_lower.endswith('.txt'):
+        return 'txt'
     else:
         raise ValueError(f"Cannot detect source type from: {source}")

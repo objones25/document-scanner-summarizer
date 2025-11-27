@@ -12,7 +12,7 @@ Allows users to:
 import sys
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 import argparse
 
 from .extractors import extract_text
@@ -289,6 +289,21 @@ def main() -> None:
         default="concise",
         help="Summary style when using --summary-only (default: concise)"
     )
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="Enable extended reasoning mode (Gemini only)"
+    )
+    parser.add_argument(
+        "--grounding",
+        action="store_true",
+        help="Enable Google Search grounding (Gemini only)"
+    )
+    parser.add_argument(
+        "--code-execution",
+        action="store_true",
+        help="Enable code execution (Gemini only)"
+    )
 
     args = parser.parse_args()
 
@@ -345,7 +360,16 @@ def main() -> None:
     if len(sys.argv) > 1 and args.provider:
         # Use provider from args
         provider_name: Literal["anthropic", "openai", "gemini"] = args.provider  # type: ignore[assignment]
-        provider_kwargs: dict[str, str] = {}
+        provider_kwargs: dict[str, Any] = {}
+
+        # Add Gemini-specific features if using Gemini
+        if provider_name == "gemini":
+            if args.thinking:
+                provider_kwargs["enable_thinking"] = True
+            if args.grounding:
+                provider_kwargs["enable_grounding"] = True
+            if args.code_execution:
+                provider_kwargs["enable_code_execution"] = True
 
         # Verify API key exists
         key_map: dict[str, str] = {

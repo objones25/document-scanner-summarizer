@@ -108,6 +108,48 @@ optional arguments:
   --summary-only       Generate summary and exit (no interactive mode)
   --summary-style {concise,detailed,bullet-points}
                        Summary style (default: concise)
+  --thinking           Enable extended reasoning mode (Gemini only)
+  --grounding          Enable Google Search grounding (Gemini only)
+  --code-execution     Enable code execution (Gemini only)
+```
+
+### Gemini Advanced Features
+
+When using Google Gemini as your AI provider, you can enable powerful advanced features:
+
+#### Extended Reasoning Mode (`--thinking`)
+Enables deep thinking capabilities for complex analysis:
+
+```bash
+python main.py document.pdf --provider gemini --thinking
+```
+
+This mode makes Gemini think more deeply about the content, providing more thorough and well-reasoned responses.
+
+#### Google Search Grounding (`--grounding`)
+Allows Gemini to search the web for up-to-date information:
+
+```bash
+python main.py article.pdf --provider gemini --grounding
+```
+
+Use this when you need current information or want to verify facts against real-time web data.
+
+#### Code Execution (`--code-execution`)
+Enables Gemini to run Python code for data analysis:
+
+```bash
+python main.py data_report.pdf --provider gemini --code-execution
+```
+
+Perfect for documents containing data, statistics, or when you need computational analysis.
+
+#### Combining Features
+
+You can enable multiple features simultaneously:
+
+```bash
+python main.py research.pdf --provider gemini --thinking --grounding --code-execution
 ```
 
 ## 💬 Interactive Commands
@@ -222,6 +264,7 @@ You: Who is responsible for the Q2 budget report?
 | **Images** | `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif` | OCR (Tesseract or Mistral) |
 | **Documents** | `.pdf` | Text extraction + OCR fallback |
 | **Documents** | `.docx` | Direct text extraction |
+| **Documents** | `.txt` | Direct text extraction (UTF-8/Latin-1) |
 | **Web** | `http://`, `https://` | Web scraping + article parsing |
 
 ## 🏗️ Project Structure
@@ -263,7 +306,7 @@ pytest -m "not slow"
 
 **Test coverage:**
 
-- ✅ 129+ tests across all modules
+- ✅ 135+ tests across all modules
 - ✅ Unit tests with mocking
 - ✅ Integration tests with real OCR
 - ✅ Type checking with proper annotations
