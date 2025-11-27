@@ -110,7 +110,48 @@ optional arguments:
                        Summary style (default: concise)
   --thinking           Enable extended reasoning mode (Gemini only)
   --grounding          Enable Google Search grounding (Gemini only)
-  --code-execution     Enable code execution (Gemini only)
+  --code-execution     Enable code execution (Gemini and Claude)
+  --web-search         Enable web search with citations (Claude only)
+  --web-fetch          Enable web page/PDF fetching (Claude only)
+```
+
+### Claude Advanced Features
+
+When using Anthropic Claude as your AI provider, you can enable powerful advanced features:
+
+#### Code Execution (`--code-execution`)
+Enables Claude to run Python code and bash commands in a secure sandbox:
+
+```bash
+python main.py data_report.pdf --provider anthropic --code-execution
+```
+
+Claude can analyze data, create visualizations, perform calculations, and manipulate files. The sandbox includes pre-installed libraries like pandas, numpy, matplotlib, and scikit-learn.
+
+#### Web Search (`--web-search`)
+Enables Claude to search the web with automatic citations:
+
+```bash
+python main.py article.pdf --provider anthropic --web-search
+```
+
+Claude autonomously searches when needed and includes citations directing readers to source material. Perfect for questions requiring current information beyond the document.
+
+#### Web Fetch (`--web-fetch`)
+Allows Claude to retrieve and analyze full content from web pages and PDFs:
+
+```bash
+python main.py document.pdf --provider anthropic --web-fetch
+```
+
+Claude can fetch addresses explicitly provided by users or derived from search results. Note: Does not support JavaScript-rendered sites.
+
+#### Combining Features
+
+You can enable multiple features simultaneously:
+
+```bash
+python main.py research.pdf --provider anthropic --code-execution --web-search --web-fetch
 ```
 
 ### Gemini Advanced Features

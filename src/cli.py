@@ -302,7 +302,17 @@ def main() -> None:
     parser.add_argument(
         "--code-execution",
         action="store_true",
-        help="Enable code execution (Gemini only)"
+        help="Enable code execution (Gemini and Claude)"
+    )
+    parser.add_argument(
+        "--web-search",
+        action="store_true",
+        help="Enable web search with citations (Claude only)"
+    )
+    parser.add_argument(
+        "--web-fetch",
+        action="store_true",
+        help="Enable web page/PDF fetching (Claude only)"
     )
 
     args = parser.parse_args()
@@ -361,6 +371,15 @@ def main() -> None:
         # Use provider from args
         provider_name: Literal["anthropic", "openai", "gemini"] = args.provider  # type: ignore[assignment]
         provider_kwargs: dict[str, Any] = {}
+
+        # Add Claude-specific features if using Anthropic
+        if provider_name == "anthropic":
+            if args.code_execution:
+                provider_kwargs["enable_code_execution"] = True
+            if args.web_search:
+                provider_kwargs["enable_web_search"] = True
+            if args.web_fetch:
+                provider_kwargs["enable_web_fetch"] = True
 
         # Add Gemini-specific features if using Gemini
         if provider_name == "gemini":

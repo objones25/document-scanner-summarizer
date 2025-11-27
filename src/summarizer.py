@@ -68,13 +68,18 @@ class LLMProvider(ABC):
 
 
 class AnthropicProvider(LLMProvider):
-    """Anthropic Claude provider."""
+    """Anthropic Claude provider with advanced features."""
 
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "claude-sonnet-4-5-20250929",
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
+        enable_code_execution: bool = False,
+        enable_web_search: bool = False,
+        enable_web_fetch: bool = False,
+        max_search_uses: int = 5,
+        max_fetch_uses: int = 5
     ):
         """
         Initialize Anthropic provider.
@@ -83,6 +88,11 @@ class AnthropicProvider(LLMProvider):
             api_key: Anthropic API key (default: ANTHROPIC_API_KEY env var)
             model: Model to use (default: claude-sonnet-4-5-20250929)
             max_tokens: Maximum tokens in response (default: 4096)
+            enable_code_execution: Enable code execution in sandbox (default: False)
+            enable_web_search: Enable web search with citations (default: False)
+            enable_web_fetch: Enable web page/PDF fetching (default: False)
+            max_search_uses: Maximum web searches per request (default: 5)
+            max_fetch_uses: Maximum web fetches per request (default: 5)
         """
         from anthropic import Anthropic
 
@@ -93,13 +103,18 @@ class AnthropicProvider(LLMProvider):
         self.client = Anthropic(api_key=self.api_key)
         self.model = model
         self.max_tokens = max_tokens
+        self.enable_code_execution = enable_code_execution
+        self.enable_web_search = enable_web_search
+        self.enable_web_fetch = enable_web_fetch
+        self.max_search_uses = max_search_uses
+        self.max_fetch_uses = max_fetch_uses
 
     def stream_response(
         self,
         history: ConversationHistory,
         **kwargs: Any
     ) -> Iterator[str]:
-        """Stream response from Claude."""
+        """Stream response from Claude with optional advanced features."""
         from anthropic.types import MessageParam
 
         # Build messages in Anthropic format
@@ -122,6 +137,43 @@ class AnthropicProvider(LLMProvider):
 
         if history.system_prompt is not None:
             stream_kwargs["system"] = history.system_prompt
+
+        # Build tools list for advanced features
+        tools: list[dict[str, Any]] = []
+        betas: list[str] = []
+
+        # Add code execution if enabled
+        if kwargs.get("enable_code_execution", self.enable_code_execution):
+            tools.append({
+                "type": "code_execution_20250825",
+                "name": "code_execution"
+            })
+            if "code-execution-2025-08-25" not in betas:
+                betas.append("code-execution-2025-08-25")
+
+        # Add web search if enabled
+        if kwargs.get("enable_web_search", self.enable_web_search):
+            tools.append({
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": kwargs.get("max_search_uses", self.max_search_uses)
+            })
+
+        # Add web fetch if enabled
+        if kwargs.get("enable_web_fetch", self.enable_web_fetch):
+            tools.append({
+                "type": "web_fetch_20250910",
+                "name": "web_fetch",
+                "max_uses": kwargs.get("max_fetch_uses", self.max_fetch_uses)
+            })
+            if "web-fetch-2025-09-10" not in betas:
+                betas.append("web-fetch-2025-09-10")
+
+        # Add tools and betas to request if any are enabled
+        if tools:
+            stream_kwargs["tools"] = tools
+        if betas:
+            stream_kwargs["betas"] = betas
 
         with self.client.messages.stream(**stream_kwargs) as stream:
             for text in stream.text_stream:
@@ -392,6 +444,11 @@ class DocumentSummarizer:
         Args:
             question: Question to ask about the document
             **kwargs: Additional provider-specific arguments
+                For Claude (Anthropic):
+                - enable_code_execution: True to enable code execution in sandbox
+                - enable_web_search: True to enable web search with citations
+                - enable_web_fetch: True to enable web page/PDF fetching
+
                 For Gemini:
                 - thinking: 'high' for extended reasoning mode
                 - enable_grounding: True to enable Google Search
@@ -401,15 +458,23 @@ class DocumentSummarizer:
             Text chunks from the streaming response
 
         Example:
-            >>> # Use thinking mode (Gemini only)
+            >>> # Claude: Enable code execution
+            >>> for chunk in summarizer.ask("Analyze this data", enable_code_execution=True):
+            ...     print(chunk, end="", flush=True)
+            >>>
+            >>> # Claude: Enable web search
+            >>> for chunk in summarizer.ask("What's the latest news?", enable_web_search=True):
+            ...     print(chunk, end="", flush=True)
+            >>>
+            >>> # Gemini: Use thinking mode
             >>> for chunk in summarizer.ask("What are the implications?", thinking="high"):
             ...     print(chunk, end="", flush=True)
             >>>
-            >>> # Enable search grounding (Gemini only)
+            >>> # Gemini: Enable search grounding
             >>> for chunk in summarizer.ask("What's the latest news?", enable_grounding=True):
             ...     print(chunk, end="", flush=True)
             >>>
-            >>> # Enable code execution (Gemini only)
+            >>> # Gemini: Enable code execution
             >>> for chunk in summarizer.ask("Analyze this data", enable_code_execution=True):
             ...     print(chunk, end="", flush=True)
         """
