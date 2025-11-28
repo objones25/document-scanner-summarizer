@@ -2,7 +2,7 @@
 Interactive CLI for document scanning and summarization.
 
 Allows users to:
-- Upload files (images, PDFs, DOCX)
+- Upload files (images, PDFs, DOCX, TXT, Markdown)
 - Provide URLs for web scraping
 - Extract text using OCR and other methods
 - Analyze documents with AI (summarize, ask questions)
@@ -40,7 +40,7 @@ def get_source_input() -> str:
         Path to file or URL
     """
     print("Enter document source:")
-    print("  • File path (image, PDF, DOCX)")
+    print("  • File path (image, PDF, DOCX, TXT, Markdown)")
     print("  • URL (web page)")
     print()
 

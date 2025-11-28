@@ -7,6 +7,7 @@ Supports:
 - URLs → web scraping + article parsing
 - DOCX files → direct text extraction
 - TXT files → direct text extraction with encoding fallback
+- Markdown files → direct text extraction with encoding fallback
 """
 
 from pathlib import Path
@@ -349,6 +350,41 @@ def extract_from_txt(txt_path: str) -> str:
         raise RuntimeError(f"Failed to extract text from TXT: {e}")
 
 
+def extract_from_markdown(md_path: str) -> str:
+    """
+    Extract text from a Markdown file.
+
+    Reads markdown files with UTF-8 encoding, preserving markdown formatting.
+    The markdown syntax will be included in the output, which is useful for
+    LLMs that understand markdown structure.
+
+    Args:
+        md_path: Path to Markdown file
+
+    Returns:
+        Extracted text with markdown formatting preserved
+
+    Raises:
+        FileNotFoundError: If Markdown file doesn't exist
+    """
+    md_path_obj = Path(md_path)
+    if not md_path_obj.exists():
+        raise FileNotFoundError(f"Markdown file not found: {md_path}")
+
+    try:
+        with open(md_path_obj, 'r', encoding='utf-8') as f:
+            return f.read()
+    except UnicodeDecodeError:
+        # Try with different encoding if UTF-8 fails
+        try:
+            with open(md_path_obj, 'r', encoding='latin-1') as f:
+                return f.read()
+        except Exception as e:
+            raise RuntimeError(f"Failed to read markdown file: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract text from Markdown: {e}")
+
+
 def extract_text(
     source: str,
     ocr_engine: Optional[OCREngine] = None,
@@ -357,25 +393,25 @@ def extract_text(
 ) -> str:
     """
     Universal text extractor - automatically detects source type and extracts text.
-    
+
     Args:
         source: File path or URL
         ocr_engine: OCR engine to use (default: TesseractOCR with default config)
-        source_type: Force source type ('image', 'pdf', 'url', 'docx').
+        source_type: Force source type ('image', 'pdf', 'url', 'docx', 'txt', 'markdown').
                     If None, auto-detect from file extension or URL format.
         **kwargs: Additional arguments passed to specific extractors
-    
+
     Returns:
         Extracted text
     """
     # Default OCR engine if not provided
     if ocr_engine is None:
         ocr_engine = TesseractOCR()
-    
+
     # Auto-detect source type
     if source_type is None:
         source_type = _detect_source_type(source)
-    
+
     # Route to appropriate extractor
     if source_type == 'image':
         return extract_from_image(source, ocr_engine, **kwargs)
@@ -387,6 +423,8 @@ def extract_text(
         return extract_from_docx(source)
     elif source_type == 'txt':
         return extract_from_txt(source)
+    elif source_type == 'markdown':
+        return extract_from_markdown(source)
     else:
         raise ValueError(f"Unsupported source type: {source_type}")
 
@@ -407,5 +445,7 @@ def _detect_source_type(source: str) -> str:
         return 'docx'
     elif source_lower.endswith('.txt'):
         return 'txt'
+    elif source_lower.endswith(('.md', '.markdown')):
+        return 'markdown'
     else:
         raise ValueError(f"Cannot detect source type from: {source}")

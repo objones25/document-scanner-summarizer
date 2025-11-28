@@ -367,15 +367,32 @@ class GeminiProvider(LLMProvider):
             if chunk.text:
                 yield chunk.text
 
-            # Handle thinking content (if thinking mode is enabled)
+            # Handle thinking content and executable code (if enabled)
             if chunk.candidates:
                 for candidate in chunk.candidates:
                     if hasattr(candidate, 'content') and candidate.content:
                         if hasattr(candidate.content, 'parts') and candidate.content.parts:
                             for part in candidate.content.parts:
+                                # Handle thinking process
                                 if hasattr(part, 'thought') and part.thought:
-                                    # Yield thinking process
                                     yield f"\n[THINKING: {part.thought}]\n"
+
+                                # Handle executable code
+                                if hasattr(part, 'executable_code') and part.executable_code:
+                                    code_obj = part.executable_code
+                                    language = getattr(code_obj, 'language', 'PYTHON')
+                                    code = getattr(code_obj, 'code', '')
+                                    if code:
+                                        yield f"\n```{language.lower() if hasattr(language, 'lower') else 'python'}\n{code}\n```\n"
+
+                                # Handle code execution results
+                                if hasattr(part, 'code_execution_result') and part.code_execution_result:
+                                    result_obj = part.code_execution_result
+                                    outcome = getattr(result_obj, 'outcome', None)
+                                    output = getattr(result_obj, 'output', '')
+                                    if output:
+                                        outcome_str = str(outcome).replace('Outcome.', '') if outcome else 'RESULT'
+                                        yield f"\n[{outcome_str}]\n{output}\n"
 
 
 class DocumentSummarizer:
@@ -402,6 +419,12 @@ class DocumentSummarizer:
         self.provider = provider
         self.document_text = document_text
 
+        # Check if code execution is enabled for Gemini
+        has_code_execution = (
+            isinstance(provider, GeminiProvider) and
+            provider.enable_code_execution
+        )
+
         # Initialize conversation history with document context
         default_system: str = (
             "You are an expert document analyst. Your role is to help users understand, "
@@ -416,6 +439,16 @@ class DocumentSummarizer:
             "- Use clear structure (bullet points, numbered lists) when appropriate"
         )
 
+        # Add code execution guidance if enabled
+        if has_code_execution:
+            default_system += (
+                "\n\nCode Execution:\n"
+                "- When code execution is needed, the document content will be available as a string variable named 'document_text'\n"
+                "- Always define document_text = '''<full document content>''' at the start of your code\n"
+                "- You can process, analyze, or extract data from document_text using Python\n"
+                "- Use libraries like re, json, or standard Python for text processing"
+            )
+
         self.history = ConversationHistory(
             system_prompt=system_prompt or default_system
         )
@@ -425,11 +458,29 @@ class DocumentSummarizer:
 
     def _add_document_context(self) -> None:
         """Add document text as context to conversation."""
-        user_context_message: str = (
-            f"Please analyze this document:\n\n"
-            f"<document>\n{self.document_text}\n</document>\n\n"
-            f"Be ready to answer questions, provide summaries, and analyze the content."
+        # Check if this is Gemini with code execution enabled
+        has_code_execution = (
+            isinstance(self.provider, GeminiProvider) and
+            self.provider.enable_code_execution
         )
+
+        # Format document context message
+        if has_code_execution:
+            # For code execution: provide clear instructions about document_text variable
+            user_context_message: str = (
+                f"Please analyze this document:\n\n"
+                f"<document>\n{self.document_text}\n</document>\n\n"
+                f"Be ready to answer questions, provide summaries, and analyze the content.\n\n"
+                f"IMPORTANT: If you need to use code execution, define the document content at the start of your code like this:\n"
+                f"document_text = '''{self.document_text}'''"
+            )
+        else:
+            # Regular format without code execution instructions
+            user_context_message = (
+                f"Please analyze this document:\n\n"
+                f"<document>\n{self.document_text}\n</document>\n\n"
+                f"Be ready to answer questions, provide summaries, and analyze the content."
+            )
 
         assistant_acknowledgment: str = (
             "I've reviewed the document and I'm ready to help you analyze it. "
