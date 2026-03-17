@@ -1,450 +1,371 @@
 # 📄 Document Scanner & Summarizer
 
-A powerful Python CLI tool that extracts text from various document sources (images, PDFs, web pages) and provides AI-powered analysis through interactive conversations with streaming responses.
+A Python tool that extracts text from documents (images, PDFs, web pages, DOCX) and provides AI-powered analysis through streaming conversations. Available as both a CLI and a production REST API deployed on Railway.
 
-## ✨ Features
+**Live API:** `https://document-scanner-summarizer-production.up.railway.app`
 
-### Document Extraction
+---
 
-- **Multi-format support**: Images (JPG, PNG, TIFF), PDFs, DOCX files, and web URLs
-- **Dual OCR engines**:
-  - Tesseract (free, local, great for printed text)
-  - Mistral OCR (API-based, excellent for handwriting and complex layouts)
-- **Smart preprocessing**: Automatic image enhancement for optimal OCR accuracy
-- **PDF handling**: Text extraction with OCR fallback for scanned documents
-- **Web scraping**: Intelligent article extraction from URLs
+## REST API
 
-### AI-Powered Analysis
+The API is the primary integration point for the website. All responses from AI endpoints are [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) streams.
 
-- **Multiple AI providers**:
-  - Anthropic Claude (claude-sonnet-4-5-20250929)
-  - OpenAI GPT (gpt-5.1-2025-11-13)
-  - Google Gemini (gemini-3-pro-preview)
-- **Streaming responses**: Real-time output as AI generates text
-- **Interactive chat**: Natural conversation interface for document analysis
-- **Context-aware**: Multiturn conversations with full conversation history
-- **Multiple summary styles**: Concise, detailed, or bullet-point summaries
+### Base URL
 
-## 🚀 Quick Start
+```
+https://document-scanner-summarizer-production.up.railway.app
+```
+
+### CORS
+
+Requests are accepted from:
+- `https://owenbeckettjones.com`
+- `https://www.owenbeckettjones.com`
+- `http://localhost:3000`, `http://localhost:5173`, `http://localhost:8080`
+
+All other origins are blocked.
+
+---
+
+### `GET /health`
+
+Check that the service is up and see the number of active sessions.
+
+**Response `200`**
+```json
+{ "status": "ok", "sessions": 3 }
+```
+
+---
+
+### `POST /api/sessions`
+
+Upload a document or provide a URL to create a session. Returns a `session_id` used by all subsequent calls.
+
+**Content-Type:** `multipart/form-data`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `file` | file | one of file/url | — | Any supported format (see below) |
+| `url` | string | one of file/url | — | Any `http(s)://` URL |
+| `provider` | string | no | `anthropic` | `anthropic` or `gemini` |
+| `ocr_engine` | string | no | `tesseract` | `tesseract` or `mistral` |
+
+Providing both `file` and `url`, or neither, returns `400`.
+
+**Response `201`**
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "char_count": 4821,
+  "preview": "First 200 characters of extracted text..."
+}
+```
+
+**Error responses**
+
+| Code | Reason |
+|---|---|
+| `400` | Neither file nor url provided, or both provided |
+| `400` | `ocr_engine=mistral` but `MISTRAL_API_KEY` not set on server |
+| `422` | Document was processed but no text could be extracted |
+| `500` | Extraction failed or provider API key missing on server |
+
+**Example — file upload**
+```js
+const form = new FormData();
+form.append("file", fileInput.files[0]);
+form.append("provider", "anthropic");
+
+const res = await fetch(`${BASE_URL}/api/sessions`, {
+  method: "POST",
+  body: form,
+  credentials: "include",
+});
+const { session_id, char_count, preview } = await res.json();
+```
+
+**Example — URL**
+```js
+const form = new FormData();
+form.append("url", "https://example.com/article");
+form.append("provider", "anthropic");
+
+const res = await fetch(`${BASE_URL}/api/sessions`, {
+  method: "POST",
+  body: form,
+  credentials: "include",
+});
+```
+
+---
+
+### `POST /api/sessions/{session_id}/chat`
+
+Send a message and stream the AI response back token-by-token.
+
+**Content-Type:** `application/json`
+
+```json
+{ "message": "What are the main conclusions?" }
+```
+
+**Response `200` — SSE stream**
+
+```
+data: The\n\n
+data: main\n\n
+data: conclusions\n\n
+data: are...\n\n
+data: [DONE]\n\n
+```
+
+On error:
+```
+event: error
+data: {"detail": "Provider error message"}
+```
+
+**Parsing SSE in JavaScript**
+```js
+const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/chat`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "What are the main conclusions?" }),
+  credentials: "include",
+});
+
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split("\n");
+  buffer = lines.pop(); // keep incomplete line
+
+  for (const line of lines) {
+    if (line.startsWith("data: ")) {
+      const token = line.slice(6);
+      if (token === "[DONE]") break;
+      // tokens have literal \n escaped — unescape if rendering as text
+      outputEl.textContent += token.replace(/\\n/g, "\n");
+    }
+    if (line.startsWith("event: error")) {
+      // next line will be: data: {"detail": "..."}
+    }
+  }
+}
+```
+
+**Error responses**
+
+| Code | Reason |
+|---|---|
+| `404` | Session not found or expired |
+| `422` | Empty message |
+
+---
+
+### `POST /api/sessions/{session_id}/summary`
+
+Generate a one-shot summary of the document. Streams back the same SSE format as `/chat`.
+
+**Content-Type:** `application/json`
+
+```json
+{ "style": "concise" }
+```
+
+| `style` | Description |
+|---|---|
+| `concise` | 2–4 paragraph overview (default) |
+| `detailed` | Comprehensive summary with sections |
+| `bullet-points` | Structured bullet-point list |
+
+**Response `200` — SSE stream** (same format as `/chat`)
+
+**Example**
+```js
+const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/summary`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ style: "bullet-points" }),
+  credentials: "include",
+});
+// consume SSE stream same as /chat
+```
+
+**Error responses**
+
+| Code | Reason |
+|---|---|
+| `404` | Session not found or expired |
+| `422` | Invalid `style` value |
+
+---
+
+### `DELETE /api/sessions/{session_id}`
+
+Explicitly end a session and free server memory. Sessions also expire automatically after **30 minutes of inactivity**.
+
+**Response `204`** — no body
+
+**Response `404`** — session not found
+
+```js
+await fetch(`${BASE_URL}/api/sessions/${sessionId}`, {
+  method: "DELETE",
+  credentials: "include",
+});
+```
+
+---
+
+### Session lifecycle
+
+```
+POST /api/sessions                     →  session_id (valid 30 min from last use)
+POST /api/sessions/:id/summary         →  stream one-shot summary
+POST /api/sessions/:id/chat            →  stream answer  (repeatable, builds history)
+DELETE /api/sessions/:id               →  cleanup
+```
+
+Each chat message is appended to the conversation history, so follow-up questions have full context.
+
+---
+
+### Supported file formats
+
+| Category | Formats |
+|---|---|
+| Images | `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif` |
+| PDF | `.pdf` (text extraction + OCR fallback for scanned docs) |
+| Word | `.docx` |
+| Text | `.txt`, `.md`, `.markdown` |
+| Web | any `http(s)://` URL |
+
+---
+
+## CLI
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/objones25/document-scanner-summarizer.git
 cd document_scanner_summarizer
-
-# Install dependencies with uv
 uv sync
-
-# Set up API keys
-cp .env.example .env
-# Edit .env and add your API keys (at least one AI provider required)
+cp .env.example .env   # add API keys
 ```
 
-### Required API Keys
-
-Add to your `.env` file:
+### Quick start
 
 ```bash
-# AI Analysis (choose at least one)
+# Interactive mode
+python main.py
+
+# Analyse a file directly
+python main.py document.pdf --provider anthropic
+
+# Quick bullet-point summary
+python main.py report.pdf --summary-only --summary-style bullet-points
+
+# OCR a handwritten image with Mistral
+python main.py notes.jpg --ocr mistral --provider anthropic
+
+# Claude with web search + code execution
+python main.py data.pdf --provider anthropic --web-search --code-execution
+
+# Gemini with thinking + grounding
+python main.py research.pdf --provider gemini --thinking --grounding
+```
+
+### API keys
+
+```bash
+# At least one AI provider required
 ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=...
 
-# OCR (optional - only for Mistral OCR)
+# Optional — only needed for Mistral OCR
 MISTRAL_API_KEY=...
 ```
 
-## 💻 Usage
+### Interactive commands
 
-### Interactive Mode (Recommended)
+| Command | Action |
+|---|---|
+| `/summary` | Concise summary |
+| `/summary detailed` | Detailed summary |
+| `/summary bullet-points` | Bullet-point summary |
+| `/clear` | Clear conversation history |
+| `/exit` | Quit |
 
-```bash
-python main.py
+### All CLI flags
+
 ```
-
-The CLI will guide you through:
-
-1. 📄 Select document source (file path or URL)
-2. 🔍 Choose OCR engine (Tesseract or Mistral)
-3. 🤖 Select AI provider (Anthropic, OpenAI, or Gemini)
-4. 💬 Start interactive conversation
-
-### Command Line Mode
-
-```bash
-# Analyze a specific file
-python main.py document.pdf
-
-# Analyze a web page
-python main.py https://example.com/article
-
-# Analyze an image with Mistral OCR and Anthropic
-python main.py workout_notes.jpg --ocr mistral --provider anthropic
-
-# Get a quick summary and exit
-python main.py document.pdf --summary-only
-
-# Get detailed bullet-point summary
-python main.py document.pdf --summary-only --summary-style bullet-points
-
-# Use specific providers
-python main.py document.pdf --provider openai
-```
-
-### Command Line Arguments
-
-```text
 positional arguments:
-  source                Document source (file path or URL)
+  source                File path or URL
 
 optional arguments:
-  -h, --help           Show help message
-  --ocr {tesseract,mistral}
-                       OCR engine to use (default: tesseract)
-  --provider {anthropic,openai,gemini}
-                       AI provider for analysis (default: anthropic)
-  --summary-only       Generate summary and exit (no interactive mode)
+  --ocr {tesseract,mistral}        OCR engine (default: tesseract)
+  --provider {anthropic,openai,gemini}  AI provider (default: anthropic)
+  --summary-only                   Print summary and exit
   --summary-style {concise,detailed,bullet-points}
-                       Summary style (default: concise)
-  --thinking           Enable extended reasoning mode (Gemini only)
-  --grounding          Enable Google Search grounding (Gemini only)
-  --code-execution     Enable code execution (Gemini and Claude)
-  --web-search         Enable web search with citations (Claude only)
-  --web-fetch          Enable web page/PDF fetching (Claude only)
+  --thinking                       Extended reasoning (Gemini)
+  --grounding                      Google Search grounding (Gemini)
+  --code-execution                 Code execution sandbox (Gemini + Claude)
+  --web-search                     Web search with citations (Claude)
+  --web-fetch                      Fetch web pages/PDFs (Claude)
 ```
 
-### Claude Advanced Features
+---
 
-When using Anthropic Claude as your AI provider, you can enable powerful advanced features:
+## Development
 
-#### Code Execution (`--code-execution`)
-Enables Claude to run Python code and bash commands in a secure sandbox:
+### Run tests
 
 ```bash
-python main.py data_report.pdf --provider anthropic --code-execution
+uv sync --all-groups
+uv run pytest --cov=src --cov-fail-under=98 -m "not slow" -v
 ```
 
-Claude can analyze data, create visualizations, perform calculations, and manipulate files. The sandbox includes pre-installed libraries like pandas, numpy, matplotlib, and scikit-learn.
+323 tests, 99.90% coverage enforced in CI.
 
-#### Web Search (`--web-search`)
-Enables Claude to search the web with automatic citations:
+### Project structure
 
-```bash
-python main.py article.pdf --provider anthropic --web-search
 ```
-
-Claude autonomously searches when needed and includes citations directing readers to source material. Perfect for questions requiring current information beyond the document.
-
-#### Web Fetch (`--web-fetch`)
-Allows Claude to retrieve and analyze full content from web pages and PDFs:
-
-```bash
-python main.py document.pdf --provider anthropic --web-fetch
-```
-
-Claude can fetch addresses explicitly provided by users or derived from search results. Note: Does not support JavaScript-rendered sites.
-
-#### Combining Features
-
-You can enable multiple features simultaneously:
-
-```bash
-python main.py research.pdf --provider anthropic --code-execution --web-search --web-fetch
-```
-
-### Gemini Advanced Features
-
-When using Google Gemini as your AI provider, you can enable powerful advanced features:
-
-#### Extended Reasoning Mode (`--thinking`)
-Enables deep thinking capabilities for complex analysis:
-
-```bash
-python main.py document.pdf --provider gemini --thinking
-```
-
-This mode makes Gemini think more deeply about the content, providing more thorough and well-reasoned responses.
-
-#### Google Search Grounding (`--grounding`)
-Allows Gemini to search the web for up-to-date information:
-
-```bash
-python main.py article.pdf --provider gemini --grounding
-```
-
-Use this when you need current information or want to verify facts against real-time web data.
-
-#### Code Execution (`--code-execution`)
-Enables Gemini to run Python code for data analysis:
-
-```bash
-python main.py data_report.pdf --provider gemini --code-execution
-```
-
-Perfect for documents containing data, statistics, or when you need computational analysis.
-
-#### Combining Features
-
-You can enable multiple features simultaneously:
-
-```bash
-python main.py research.pdf --provider gemini --thinking --grounding --code-execution
-```
-
-## 💬 Interactive Commands
-
-Once in interactive mode, you can use these commands:
-
-### Ask Questions
-
-Just type your question and press Enter:
-
-```text
-You: What are the main conclusions?
-You: Can you explain the methodology in detail?
-You: Who are the key people mentioned?
-You: Could you list all the exercises in the workout?
-```
-
-### Get Summaries
-
-Use the `/summary` command with optional style:
-
-```text
-You: /summary                    # Concise summary (2-4 paragraphs)
-You: /summary detailed           # Comprehensive summary with sections
-You: /summary bullet-points      # Structured bullet-point summary
-```
-
-### Manage Conversation
-
-```text
-You: /clear                      # Clear conversation history
-You: /exit                       # Exit the program
-```
-
-**Tip**: Press `Ctrl+C` or `Ctrl+D` to exit anytime.
-
-## 📖 Example Workflows
-
-### Example 1: Analyze a Research Paper
-
-```bash
-python main.py research_paper.pdf --provider anthropic
-```
-
-Interactive session:
-
-```text
-You: /summary detailed
-🤖 AI: This paper investigates...
-
-You: What methodology did they use?
-🤖 AI: The researchers employed a mixed-methods approach...
-
-You: What were the main limitations?
-🤖 AI: The study has three primary limitations...
-```
-
-### Example 2: OCR Handwritten Workout Notes
-
-```bash
-python main.py workout_notes.jpg --ocr mistral --provider anthropic
-```
-
-```text
-You: Could you list all the exercises?
-🤖 AI:
-Warm-Up:
-1. Uphill walk on treadmill...
-
-Strength Set 1 (2 rounds):
-1. Keiser high to low chops × 10...
-[continues with full exercise list]
-```
-
-### Example 3: Quick Web Article Summary
-
-```bash
-python main.py https://example.com/tech-article --summary-only --summary-style bullet-points
-```
-
-Output:
-
-```text
-📝 Generating bullet-points summary...
-
-- Main topic: New developments in AI reasoning systems
-- Key points:
-  • Breakthrough in multi-step reasoning capabilities
-  • 40% improvement in complex problem-solving tasks
-  • New training methodology using reinforcement learning
-- Conclusion: Significant step toward more capable AI systems
-```
-
-### Example 4: Analyze Meeting Notes from DOCX
-
-```bash
-python main.py meeting_notes.docx --provider openai
-```
-
-```text
-You: What action items were mentioned?
-🤖 AI: Based on the meeting notes, here are the action items...
-
-You: Who is responsible for the Q2 budget report?
-🤖 AI: According to the notes, Sarah Johnson is responsible...
-```
-
-## 📁 Supported File Types
-
-| Category | Formats | Method |
-|----------|---------|--------|
-| **Images** | `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif` | OCR (Tesseract or Mistral) |
-| **Documents** | `.pdf` | Text extraction + OCR fallback |
-| **Documents** | `.docx` | Direct text extraction |
-| **Documents** | `.txt` | Direct text extraction (UTF-8/Latin-1) |
-| **Web** | `http://`, `https://` | Web scraping + article parsing |
-
-## 🏗️ Project Structure
-
-```text
 document_scanner_summarizer/
-├── main.py                    # CLI entry point
 ├── src/
-│   ├── cli.py                # Interactive CLI interface
-│   ├── extractors.py         # Universal text extraction
-│   ├── ocr.py                # OCR engines (Tesseract, Mistral)
-│   ├── preprocessing.py      # Image preprocessing pipeline
-│   └── summarizer.py         # AI conversation & analysis
-├── tests/
-│   ├── test_ocr.py           # OCR unit tests
-│   ├── test_ocr_real_images.py # Integration tests
-│   ├── test_extractors.py   # Extraction tests
-│   └── test_preprocessing.py # Preprocessing tests
-├── pyproject.toml            # Project dependencies
-├── .env.example              # Environment template
-└── README.md                 # This file
+│   ├── api.py              # FastAPI REST API (Railway deployment)
+│   ├── cli.py              # Interactive CLI
+│   ├── extractors.py       # Text extraction (PDF, DOCX, URL, images)
+│   ├── ocr.py              # Tesseract + Mistral OCR engines
+│   ├── preprocessing.py    # Image preprocessing pipeline
+│   └── summarizer.py       # AI providers + conversation history
+├── tests/                  # 323 tests, 99.90% coverage
+├── Dockerfile              # Railway container build
+├── railway.toml            # Railway deployment config
+├── .github/workflows/ci.yml
+├── pyproject.toml
+└── uv.lock
 ```
 
-## 🧪 Testing
+### Docker (local)
 
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_extractors.py
-
-# Run with coverage
-pytest --cov=src tests/
-
-# Skip slow integration tests
-pytest -m "not slow"
+docker build -t doc-scanner .
+docker run -p 8000:8000 \
+  -e ANTHROPIC_API_KEY=... \
+  -e GOOGLE_API_KEY=... \
+  doc-scanner
 ```
 
-**Test coverage:**
+---
 
-- ✅ 135+ tests across all modules
-- ✅ Unit tests with mocking
-- ✅ Integration tests with real OCR
-- ✅ Type checking with proper annotations
+## License
 
-## 🔧 Advanced Usage
-
-### Use as a Library
-
-```python
-from src.extractors import extract_text
-from src.summarizer import create_summarizer
-
-# Extract text
-text = extract_text("document.pdf")
-
-# Create summarizer
-summarizer = create_summarizer(text, provider_name="anthropic")
-
-# Get streaming summary
-for chunk in summarizer.summarize(style="concise"):
-    print(chunk, end="", flush=True)
-
-# Ask questions
-for chunk in summarizer.ask("What are the key findings?"):
-    print(chunk, end="", flush=True)
-```
-
-### Custom System Prompts
-
-```python
-from src.summarizer import DocumentSummarizer, AnthropicProvider
-
-provider = AnthropicProvider()
-summarizer = DocumentSummarizer(
-    provider=provider,
-    document_text=text,
-    system_prompt="You are a legal document analyst. Focus on contracts and terms."
-)
-```
-
-### Custom Models
-
-```python
-from src.summarizer import create_summarizer
-
-# Use a specific model version
-summarizer = create_summarizer(
-    document_text=text,
-    provider_name="anthropic",
-    model="claude-3-5-sonnet-20241022"  # Custom model
-)
-```
-
-## 🛠️ Development
-
-### Prerequisites
-
-- Python 3.13+
-- uv package manager
-- Tesseract OCR (for local OCR)
-
-### Setup Development Environment
-
-```bash
-# Clone repository
-git clone https://github.com/objones25/document-scanner-summarizer.git
-cd document_scanner_summarizer
-
-# Install dependencies
-uv sync
-
-# Install Tesseract (macOS)
-brew install tesseract
-
-# Run tests
-pytest
-
-# Type checking
-mypy src/
-```
-
-### Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## 📝 License
-
-MIT License - see LICENSE file for details
-
-## 🙏 Acknowledgments
-
-- Built with [Anthropic Claude](https://www.anthropic.com/)
-- OCR powered by [Tesseract](https://github.com/tesseract-ocr/tesseract) and [Mistral AI](https://mistral.ai/)
-- OpenAI and Google AI for additional LLM support
+MIT
