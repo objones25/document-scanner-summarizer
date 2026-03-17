@@ -1,0 +1,27 @@
+{
+  "version": "0.2",
+  "words": [
+    "healthchecks",
+    "mistral",
+    "mistralai",
+    "tesseract",
+    "pytesseract",
+    "pytest",
+    "pyproject",
+    "uvicorn",
+    "multipart",
+    "leptonica",
+    "poppler",
+    "pydantic",
+    "fastapi",
+    "docx",
+    "pypdf",
+    "deskew",
+    "binarize",
+    "binarization",
+    "grayscale",
+    "opencv",
+    "numpy",
+    "ndarray"
+  ]
+}

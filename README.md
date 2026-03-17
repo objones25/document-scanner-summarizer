@@ -1,4 +1,4 @@
-# 📄 Document Scanner & Summarizer
+# Document Scanner & Summarizer
 
 A Python tool that extracts text from documents (images, PDFs, web pages, DOCX) and provides AI-powered analysis through streaming conversations. Available as both a CLI and a production REST API deployed on Railway.
 
@@ -12,7 +12,7 @@ The API is the primary integration point for the website. All responses from AI 
 
 ### Base URL
 
-```
+```text
 https://document-scanner-summarizer-production.up.railway.app
 ```
 
@@ -20,17 +20,18 @@ https://document-scanner-summarizer-production.up.railway.app
 
 All `/api/*` endpoints require a Bearer token when `API_TOKEN` is set on the server:
 
-```
+```text
 Authorization: Bearer <your-token>
 ```
 
-`/health` is always public (required for Railway healthchecks).
+`/health` is always public (required for Railway health checks).
 
 If `API_TOKEN` is not set the server accepts all requests — useful for local development.
 
 ### CORS
 
 Requests are accepted from:
+
 - `https://owenbeckettjones.com`
 - `https://www.owenbeckettjones.com`
 - `http://localhost:3000`, `http://localhost:5173`, `http://localhost:8080`
@@ -44,6 +45,7 @@ All other origins are blocked.
 Check that the service is up and see the number of active sessions.
 
 **Response `200`**
+
 ```json
 { "status": "ok", "sessions": 3 }
 ```
@@ -57,7 +59,7 @@ Upload a document or provide a URL to create a session. Returns a `session_id` u
 **Content-Type:** `multipart/form-data`
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `file` | file | one of file/url | — | Any supported format (see below) |
 | `url` | string | one of file/url | — | Any `http(s)://` URL |
 | `provider` | string | no | `anthropic` | `anthropic` or `gemini` |
@@ -66,6 +68,7 @@ Upload a document or provide a URL to create a session. Returns a `session_id` u
 Providing both `file` and `url`, or neither, returns `400`.
 
 **Response `201`**
+
 ```json
 {
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -77,13 +80,14 @@ Providing both `file` and `url`, or neither, returns `400`.
 **Error responses**
 
 | Code | Reason |
-|---|---|
+| --- | --- |
 | `400` | Neither file nor url provided, or both provided |
 | `400` | `ocr_engine=mistral` but `MISTRAL_API_KEY` not set on server |
 | `422` | Document was processed but no text could be extracted |
 | `500` | Extraction failed or provider API key missing on server |
 
 **Example — file upload**
+
 ```js
 const form = new FormData();
 form.append("file", fileInput.files[0]);
@@ -91,7 +95,7 @@ form.append("provider", "anthropic");
 
 const res = await fetch(`${BASE_URL}/api/sessions`, {
   method: "POST",
-  headers: { "Authorization": `Bearer ${API_TOKEN}` },
+  headers: { Authorization: `Bearer ${API_TOKEN}` },
   body: form,
   credentials: "include",
 });
@@ -99,6 +103,7 @@ const { session_id, char_count, preview } = await res.json();
 ```
 
 **Example — URL**
+
 ```js
 const form = new FormData();
 form.append("url", "https://example.com/article");
@@ -106,7 +111,7 @@ form.append("provider", "anthropic");
 
 const res = await fetch(`${BASE_URL}/api/sessions`, {
   method: "POST",
-  headers: { "Authorization": `Bearer ${API_TOKEN}` },
+  headers: { Authorization: `Bearer ${API_TOKEN}` },
   body: form,
   credentials: "include",
 });
@@ -126,7 +131,7 @@ Send a message and stream the AI response back token-by-token.
 
 **Response `200` — SSE stream**
 
-```
+```text
 data: The\n\n
 data: main\n\n
 data: conclusions\n\n
@@ -135,18 +140,20 @@ data: [DONE]\n\n
 ```
 
 On error:
-```
+
+```text
 event: error
 data: {"detail": "Provider error message"}
 ```
 
 **Parsing SSE in JavaScript**
+
 ```js
 const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/chat`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${API_TOKEN}`,
+    Authorization: `Bearer ${API_TOKEN}`,
   },
   body: JSON.stringify({ message: "What are the main conclusions?" }),
   credentials: "include",
@@ -162,7 +169,7 @@ while (true) {
 
   buffer += decoder.decode(value, { stream: true });
   const lines = buffer.split("\n");
-  buffer = lines.pop(); // keep incomplete line
+  buffer = lines.pop();
 
   for (const line of lines) {
     if (line.startsWith("data: ")) {
@@ -181,7 +188,7 @@ while (true) {
 **Error responses**
 
 | Code | Reason |
-|---|---|
+| --- | --- |
 | `404` | Session not found or expired |
 | `422` | Empty message |
 
@@ -198,7 +205,7 @@ Generate a one-shot summary of the document. Streams back the same SSE format as
 ```
 
 | `style` | Description |
-|---|---|
+| --- | --- |
 | `concise` | 2–4 paragraph overview (default) |
 | `detailed` | Comprehensive summary with sections |
 | `bullet-points` | Structured bullet-point list |
@@ -206,12 +213,13 @@ Generate a one-shot summary of the document. Streams back the same SSE format as
 **Response `200` — SSE stream** (same format as `/chat`)
 
 **Example**
+
 ```js
 const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/summary`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${API_TOKEN}`,
+    Authorization: `Bearer ${API_TOKEN}`,
   },
   body: JSON.stringify({ style: "bullet-points" }),
   credentials: "include",
@@ -222,7 +230,7 @@ const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/summary`, {
 **Error responses**
 
 | Code | Reason |
-|---|---|
+| --- | --- |
 | `404` | Session not found or expired |
 | `422` | Invalid `style` value |
 
@@ -239,7 +247,7 @@ Explicitly end a session and free server memory. Sessions also expire automatica
 ```js
 await fetch(`${BASE_URL}/api/sessions/${sessionId}`, {
   method: "DELETE",
-  headers: { "Authorization": `Bearer ${API_TOKEN}` },
+  headers: { Authorization: `Bearer ${API_TOKEN}` },
   credentials: "include",
 });
 ```
@@ -248,11 +256,11 @@ await fetch(`${BASE_URL}/api/sessions/${sessionId}`, {
 
 ### Session lifecycle
 
-```
-POST /api/sessions                     →  session_id (valid 30 min from last use)
-POST /api/sessions/:id/summary         →  stream one-shot summary
-POST /api/sessions/:id/chat            →  stream answer  (repeatable, builds history)
-DELETE /api/sessions/:id               →  cleanup
+```text
+POST /api/sessions                →  session_id (valid 30 min from last use)
+POST /api/sessions/:id/summary    →  stream one-shot summary
+POST /api/sessions/:id/chat       →  stream answer (repeatable, builds history)
+DELETE /api/sessions/:id          →  cleanup
 ```
 
 Each chat message is appended to the conversation history, so follow-up questions have full context.
@@ -262,7 +270,7 @@ Each chat message is appended to the conversation history, so follow-up question
 ### Supported file formats
 
 | Category | Formats |
-|---|---|
+| --- | --- |
 | Images | `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif` |
 | PDF | `.pdf` (text extraction + OCR fallback for scanned docs) |
 | Word | `.docx` |
@@ -288,7 +296,7 @@ cp .env.example .env   # add API keys
 # Interactive mode
 python main.py
 
-# Analyse a file directly
+# Analyze a file directly
 python main.py document.pdf --provider anthropic
 
 # Quick bullet-point summary
@@ -318,7 +326,7 @@ MISTRAL_API_KEY=...
 ### Interactive commands
 
 | Command | Action |
-|---|---|
+| --- | --- |
 | `/summary` | Concise summary |
 | `/summary detailed` | Detailed summary |
 | `/summary bullet-points` | Bullet-point summary |
@@ -327,20 +335,20 @@ MISTRAL_API_KEY=...
 
 ### All CLI flags
 
-```
+```text
 positional arguments:
   source                File path or URL
 
 optional arguments:
-  --ocr {tesseract,mistral}        OCR engine (default: tesseract)
+  --ocr {tesseract,mistral}             OCR engine (default: tesseract)
   --provider {anthropic,openai,gemini}  AI provider (default: anthropic)
-  --summary-only                   Print summary and exit
+  --summary-only                        Print summary and exit
   --summary-style {concise,detailed,bullet-points}
-  --thinking                       Extended reasoning (Gemini)
-  --grounding                      Google Search grounding (Gemini)
-  --code-execution                 Code execution sandbox (Gemini + Claude)
-  --web-search                     Web search with citations (Claude)
-  --web-fetch                      Fetch web pages/PDFs (Claude)
+  --thinking                            Extended reasoning (Gemini)
+  --grounding                           Google Search grounding (Gemini)
+  --code-execution                      Code execution sandbox (Gemini + Claude)
+  --web-search                          Web search with citations (Claude)
+  --web-fetch                           Fetch web pages/PDFs (Claude)
 ```
 
 ---
@@ -354,11 +362,11 @@ uv sync --all-groups
 uv run pytest --cov=src --cov-fail-under=98 -m "not slow" -v
 ```
 
-323 tests, 99.90% coverage enforced in CI.
+326 tests, 99.90% coverage enforced in CI.
 
 ### Project structure
 
-```
+```text
 document_scanner_summarizer/
 ├── src/
 │   ├── api.py              # FastAPI REST API (Railway deployment)
@@ -367,7 +375,7 @@ document_scanner_summarizer/
 │   ├── ocr.py              # Tesseract + Mistral OCR engines
 │   ├── preprocessing.py    # Image preprocessing pipeline
 │   └── summarizer.py       # AI providers + conversation history
-├── tests/                  # 323 tests, 99.90% coverage
+├── tests/                  # 326 tests, 99.90% coverage
 ├── Dockerfile              # Railway container build
 ├── railway.toml            # Railway deployment config
 ├── .github/workflows/ci.yml
