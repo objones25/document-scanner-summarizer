@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 from numpy.typing import NDArray
 from pathlib import Path
+from unittest.mock import patch
 
 from src.preprocessing import (
     load_image,
@@ -537,3 +538,102 @@ def test_all_method_combinations(temp_image_file: Path, method_combo: tuple):
     )
     assert result is not None
     assert result.dtype == np.uint8
+
+
+# ============================================================================
+# Edge Case Tests (coverage for branch paths)
+# ============================================================================
+
+def test_binarize_sauvola_even_window_size(gray_image: NDArray[np.uint8]):
+    """Even window_size is auto-corrected to odd (line 61)."""
+    result = binarize_sauvola(gray_image, window_size=24)
+    assert result is not None
+
+
+@patch("src.preprocessing.cv2.HoughLinesP")
+@patch("src.preprocessing.cv2.Canny")
+def test_detect_skew_angle_hough_none_lines(mock_canny, mock_hough):
+    """HoughLinesP returning None triggers TypeError handler → 0.0."""
+    mock_canny.return_value = np.zeros((100, 100), dtype=np.uint8)
+    mock_hough.return_value = None
+    result = detect_skew_angle_hough(np.zeros((100, 100), dtype=np.uint8))
+    assert result == 0.0
+
+
+@patch("src.preprocessing.cv2.HoughLinesP")
+@patch("src.preprocessing.cv2.Canny")
+def test_detect_skew_angle_hough_empty_lines_array(mock_canny, mock_hough):
+    """HoughLinesP returning empty array → len(lines)==0 → returns 0.0."""
+    mock_canny.return_value = np.zeros((100, 100), dtype=np.uint8)
+    mock_hough.return_value = np.array([]).reshape(0, 1, 4)
+    result = detect_skew_angle_hough(np.zeros((100, 100), dtype=np.uint8))
+    assert result == 0.0
+
+
+@patch("src.preprocessing.cv2.HoughLinesP")
+@patch("src.preprocessing.cv2.Canny")
+def test_detect_skew_angle_hough_angle_less_than_minus90(mock_canny, mock_hough):
+    """Line producing angle < -90° triggers angle += 180 branch."""
+    mock_canny.return_value = np.zeros((100, 100), dtype=np.uint8)
+    # dy = 0-200 = -200, dx = 0-100 = -100 → arctan2(-200,-100) ≈ -116.6° → + 180 ≈ 63.4°
+    mock_hough.return_value = np.array([[[100, 200, 0, 0]]])
+    result = detect_skew_angle_hough(np.zeros((100, 100), dtype=np.uint8), angle_range=90)
+    assert isinstance(result, float)
+
+
+@patch("src.preprocessing.cv2.HoughLinesP")
+@patch("src.preprocessing.cv2.Canny")
+def test_detect_skew_angle_hough_angle_greater_than_90(mock_canny, mock_hough):
+    """Line producing angle > 90° triggers angle -= 180 branch."""
+    mock_canny.return_value = np.zeros((100, 100), dtype=np.uint8)
+    # dy = 200-0 = 200, dx = 0-100 = -100 → arctan2(200,-100) ≈ 116.6° → - 180 ≈ -63.4°
+    mock_hough.return_value = np.array([[[100, 0, 0, 200]]])
+    result = detect_skew_angle_hough(np.zeros((100, 100), dtype=np.uint8), angle_range=90)
+    assert isinstance(result, float)
+
+
+@patch("src.preprocessing.cv2.HoughLinesP")
+@patch("src.preprocessing.cv2.Canny")
+def test_detect_skew_angle_hough_no_valid_angles(mock_canny, mock_hough):
+    """All normalized angles outside angle_range → returns 0.0."""
+    mock_canny.return_value = np.zeros((100, 100), dtype=np.uint8)
+    # After normalization ≈ -63.4°, abs > angle_range=1 → not appended
+    mock_hough.return_value = np.array([[[100, 0, 0, 200]]])
+    result = detect_skew_angle_hough(np.zeros((100, 100), dtype=np.uint8), angle_range=1)
+    assert result == 0.0
+
+
+@patch("src.preprocessing.cv2.findContours")
+@patch("src.preprocessing.cv2.threshold")
+def test_detect_skew_angle_contour_no_contours(mock_threshold, mock_findContours):
+    """No contours detected → returns 0.0."""
+    mock_threshold.return_value = (None, np.zeros((100, 100), dtype=np.uint8))
+    mock_findContours.return_value = ([], None)
+    result = detect_skew_angle_contour(np.zeros((100, 100), dtype=np.uint8))
+    assert result == 0.0
+
+
+@patch("src.preprocessing.cv2.minAreaRect")
+@patch("src.preprocessing.cv2.findContours")
+@patch("src.preprocessing.cv2.threshold")
+def test_detect_skew_angle_contour_angle_less_than_minus45(
+    mock_threshold, mock_findContours, mock_minAreaRect
+):
+    """angle < -45 triggers: angle = 90 + angle."""
+    mock_threshold.return_value = (None, np.zeros((100, 100), dtype=np.uint8))
+    contour = np.array([[[10, 10]], [[20, 10]], [[20, 20]], [[10, 20]]])
+    mock_findContours.return_value = ([contour], None)
+    mock_minAreaRect.return_value = ((15, 15), (10, 5), -60.0)
+    result = detect_skew_angle_contour(np.zeros((100, 100), dtype=np.uint8))
+    assert result == 30.0  # 90 + (-60)
+
+
+@patch("src.preprocessing.detect_skew_angle_hough")
+@patch("src.preprocessing.detect_skew_angle_contour")
+def test_deskew_auto_method_all_fail(mock_contour, mock_hough):
+    """When all auto-method angle detectors raise, return original image unchanged."""
+    mock_hough.side_effect = RuntimeError("no lines")
+    mock_contour.side_effect = RuntimeError("no contours")
+    img = np.zeros((100, 100), dtype=np.uint8)
+    result = deskew(img, method="auto")
+    assert np.array_equal(result, img)

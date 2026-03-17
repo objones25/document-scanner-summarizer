@@ -34,24 +34,24 @@ class OCREngine(ABC):
     def extract_text(self, image: MatLike) -> str:
         """
         Extract text from preprocessed image.
-        
+
         Args:
             image: Preprocessed image (typically binary, grayscale acceptable)
-            
+
         Returns:
             Extracted text as string
         """
-        pass
-    
+        pass  # pragma: no cover
+
     @abstractmethod
     def extract_text_with_confidence(self, image: MatLike) -> tuple[str, float]:
         """
         Extract text with confidence score.
-        
+
         Returns:
             Tuple of (text, confidence_score) where confidence is 0-100
         """
-        pass
+        pass  # pragma: no cover
 
 
 class TesseractOCR(OCREngine):

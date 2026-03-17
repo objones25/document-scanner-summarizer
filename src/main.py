@@ -2,5 +2,5 @@ def main():
     print("Hello from document-scanner-summarizer!")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

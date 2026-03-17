@@ -64,7 +64,7 @@ class LLMProvider(ABC):
         Yields:
             Text chunks from the streaming response
         """
-        pass
+        pass  # pragma: no cover
 
 
 class AnthropicProvider(LLMProvider):

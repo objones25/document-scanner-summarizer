@@ -321,7 +321,7 @@ def main() -> None:
     try:
         from dotenv import load_dotenv
         load_dotenv()
-    except ImportError:
+    except ImportError:  # pragma: no cover
         pass
 
     # Print header
@@ -427,5 +427,5 @@ def main() -> None:
     interactive_mode(document_text, provider_name, provider_kwargs)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

@@ -47,7 +47,6 @@ dmypy.json
 
 # uv
 .uv/
-uv.lock
 
 # Distribution / packaging
 *.whl
