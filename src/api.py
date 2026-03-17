@@ -8,6 +8,7 @@ Server-Sent Events streaming. Designed for deployment on Railway.
 import asyncio
 import json
 import os
+import secrets
 import tempfile
 import threading
 import uuid
@@ -17,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -131,6 +132,23 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+_API_TOKEN: str | None = os.getenv("API_TOKEN")
+
+
+def verify_token(authorization: str | None = Header(None)) -> None:
+    """Require 'Authorization: Bearer <API_TOKEN>' when API_TOKEN is set."""
+    if not _API_TOKEN:
+        return  # token not configured — open access (local dev)
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    if not secrets.compare_digest(authorization[7:], _API_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
 
@@ -179,6 +197,7 @@ async def create_session(
     ocr_engine: Literal["tesseract", "mistral"] = Form("tesseract"),
     file: UploadFile | None = File(None),
     url: str | None = Form(None),
+    _: None = Depends(verify_token),
 ) -> JSONResponse:
     has_file = file is not None
     has_url = url is not None and url.strip() != ""
@@ -240,7 +259,7 @@ async def create_session(
 
 
 @app.post("/api/sessions/{session_id}/chat")
-async def chat(session_id: str, request: ChatRequest) -> StreamingResponse:
+async def chat(session_id: str, request: ChatRequest, _: None = Depends(verify_token)) -> StreamingResponse:
     summarizer = sessions.get(session_id)
     if summarizer is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -252,7 +271,7 @@ async def chat(session_id: str, request: ChatRequest) -> StreamingResponse:
 
 
 @app.post("/api/sessions/{session_id}/summary")
-async def summary(session_id: str, request: SummaryRequest) -> StreamingResponse:
+async def summary(session_id: str, request: SummaryRequest, _: None = Depends(verify_token)) -> StreamingResponse:
     summarizer = sessions.get(session_id)
     if summarizer is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -264,7 +283,7 @@ async def summary(session_id: str, request: SummaryRequest) -> StreamingResponse
 
 
 @app.delete("/api/sessions/{session_id}", status_code=204)
-async def delete_session(session_id: str) -> Response:
+async def delete_session(session_id: str, _: None = Depends(verify_token)) -> Response:
     if not sessions.delete(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     return Response(status_code=204)

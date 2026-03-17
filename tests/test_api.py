@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from src.api import app, sessions
+from src.api import app, sessions, _API_TOKEN
 
 
 # ---------------------------------------------------------------------------
@@ -502,3 +502,69 @@ class TestSessionStore:
         assert removed == 1
         assert sessions.get("stale") is None
         assert sessions.get("fresh") is not None
+
+
+# ---------------------------------------------------------------------------
+# TestAuth
+# ---------------------------------------------------------------------------
+
+class TestAuth:
+    """verify_token dependency — tests with API_TOKEN env var patched."""
+
+    def test_no_token_configured_allows_access(self, client):
+        """When API_TOKEN is unset, all requests pass through."""
+        with patch("src.api._API_TOKEN", None):
+            with patch("src.api.extract_text", return_value="text"):
+                with patch("src.api.create_summarizer", return_value=_mock_summarizer()):
+                    res = client.post(
+                        "/api/sessions",
+                        files={"file": ("f.txt", b"hi", "text/plain")},
+                    )
+        assert res.status_code == 201
+
+    def test_valid_token_allows_access(self, client):
+        """Correct Bearer token is accepted."""
+        with patch("src.api._API_TOKEN", "secret-token"):
+            with patch("src.api.extract_text", return_value="text"):
+                with patch("src.api.create_summarizer", return_value=_mock_summarizer()):
+                    res = client.post(
+                        "/api/sessions",
+                        files={"file": ("f.txt", b"hi", "text/plain")},
+                        headers={"Authorization": "Bearer secret-token"},
+                    )
+        assert res.status_code == 201
+
+    def test_missing_header_returns_401(self, client):
+        """Request with no Authorization header is rejected."""
+        with patch("src.api._API_TOKEN", "secret-token"):
+            res = client.post(
+                "/api/sessions",
+                files={"file": ("f.txt", b"hi", "text/plain")},
+            )
+        assert res.status_code == 401
+
+    def test_wrong_token_returns_401(self, client):
+        """Wrong token value is rejected."""
+        with patch("src.api._API_TOKEN", "secret-token"):
+            res = client.post(
+                "/api/sessions",
+                files={"file": ("f.txt", b"hi", "text/plain")},
+                headers={"Authorization": "Bearer wrong-token"},
+            )
+        assert res.status_code == 401
+
+    def test_malformed_header_returns_401(self, client):
+        """Authorization header without 'Bearer ' prefix is rejected."""
+        with patch("src.api._API_TOKEN", "secret-token"):
+            res = client.post(
+                "/api/sessions",
+                files={"file": ("f.txt", b"hi", "text/plain")},
+                headers={"Authorization": "secret-token"},
+            )
+        assert res.status_code == 401
+
+    def test_health_requires_no_token(self, client):
+        """/health is always public regardless of API_TOKEN."""
+        with patch("src.api._API_TOKEN", "secret-token"):
+            res = client.get("/health")
+        assert res.status_code == 200

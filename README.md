@@ -16,6 +16,18 @@ The API is the primary integration point for the website. All responses from AI 
 https://document-scanner-summarizer-production.up.railway.app
 ```
 
+### Authentication
+
+All `/api/*` endpoints require a Bearer token when `API_TOKEN` is set on the server:
+
+```
+Authorization: Bearer <your-token>
+```
+
+`/health` is always public (required for Railway healthchecks).
+
+If `API_TOKEN` is not set the server accepts all requests — useful for local development.
+
 ### CORS
 
 Requests are accepted from:
@@ -79,6 +91,7 @@ form.append("provider", "anthropic");
 
 const res = await fetch(`${BASE_URL}/api/sessions`, {
   method: "POST",
+  headers: { "Authorization": `Bearer ${API_TOKEN}` },
   body: form,
   credentials: "include",
 });
@@ -93,6 +106,7 @@ form.append("provider", "anthropic");
 
 const res = await fetch(`${BASE_URL}/api/sessions`, {
   method: "POST",
+  headers: { "Authorization": `Bearer ${API_TOKEN}` },
   body: form,
   credentials: "include",
 });
@@ -130,7 +144,10 @@ data: {"detail": "Provider error message"}
 ```js
 const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/chat`, {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${API_TOKEN}`,
+  },
   body: JSON.stringify({ message: "What are the main conclusions?" }),
   credentials: "include",
 });
@@ -192,7 +209,10 @@ Generate a one-shot summary of the document. Streams back the same SSE format as
 ```js
 const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/summary`, {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${API_TOKEN}`,
+  },
   body: JSON.stringify({ style: "bullet-points" }),
   credentials: "include",
 });
@@ -219,6 +239,7 @@ Explicitly end a session and free server memory. Sessions also expire automatica
 ```js
 await fetch(`${BASE_URL}/api/sessions/${sessionId}`, {
   method: "DELETE",
+  headers: { "Authorization": `Bearer ${API_TOKEN}` },
   credentials: "include",
 });
 ```
