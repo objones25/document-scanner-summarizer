@@ -73,7 +73,7 @@ class AnthropicProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "claude-sonnet-4-5-20250929",
+        model: str = "claude-sonnet-5",
         max_tokens: int = 4096,
         enable_code_execution: bool = False,
         enable_web_search: bool = False,
@@ -86,7 +86,7 @@ class AnthropicProvider(LLMProvider):
 
         Args:
             api_key: Anthropic API key (default: ANTHROPIC_API_KEY env var)
-            model: Model to use (default: claude-sonnet-4-5-20250929)
+            model: Model to use (default: claude-sonnet-5)
             max_tokens: Maximum tokens in response (default: 4096)
             enable_code_execution: Enable code execution in sandbox (default: False)
             enable_web_search: Enable web search with citations (default: False)
@@ -190,7 +190,7 @@ class OpenAIProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gpt-5.1-2025-11-13",
+        model: str = "gpt-5.6-sol",
         max_tokens: int = 4096
     ):
         """
@@ -198,7 +198,7 @@ class OpenAIProvider(LLMProvider):
 
         Args:
             api_key: OpenAI API key (default: OPENAI_API_KEY env var)
-            model: Model to use (default: gpt-5.1-2025-11-13)
+            model: Model to use (default: gpt-5.6-sol)
             max_tokens: Maximum tokens in response (default: 4096)
         """
         from openai import OpenAI
@@ -261,7 +261,7 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gemini-3-pro-preview",
+        model: str = "gemini-3.6-flash",
         max_tokens: int = 4096,
         enable_thinking: bool = False,
         enable_grounding: bool = False,
@@ -272,7 +272,7 @@ class GeminiProvider(LLMProvider):
 
         Args:
             api_key: Google API key (default: GOOGLE_API_KEY env var)
-            model: Model to use (default: gemini-3-pro-preview)
+            model: Model to use (default: gemini-3.6-flash)
             max_tokens: Maximum tokens in response (default: 4096)
             enable_thinking: Enable extended reasoning mode (default: False)
             enable_grounding: Enable Google Search grounding (default: False)
@@ -322,7 +322,7 @@ class GeminiProvider(LLMProvider):
         if history.system_prompt:
             config_params["system_instruction"] = history.system_prompt
 
-        # Add thinking mode if enabled (for gemini-3-pro-preview)
+        # Add thinking mode if enabled (for gemini-3.6-flash)
         thinking_mode: str | None = kwargs.get("thinking")
         if thinking_mode or self.enable_thinking:
             # Use ThinkingConfig for extended reasoning
